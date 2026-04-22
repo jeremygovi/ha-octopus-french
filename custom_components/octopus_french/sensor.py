@@ -27,6 +27,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN, LEDGER_TYPE_ELECTRICITY, LEDGER_TYPE_GAS
 from .coordinator import OctopusFrenchDataUpdateCoordinator
+from .coordinator_intelligent import OctopusIntelligentDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -326,6 +327,11 @@ async def async_setup_entry(
     )
 
     async_add_entities(entities)
+
+    # Add intelligent sensor if available
+    intelligent_coordinator = hass.data[DOMAIN][config_entry.entry_id].get("intelligent_coordinator")
+    if intelligent_coordinator:
+        async_add_entities([OctopusIntelligentStateSensor(intelligent_coordinator)])
 
 
 def _detect_tariff_type_for_meter(data: dict, prm_id: str) -> str:
@@ -1666,4 +1672,31 @@ class OctopusLedgerSensor(CoordinatorEntity, SensorEntity):
             "ledger_name": ledger.get("name"),
             "balance_cents": ledger.get("balance"),
             "ledger_type": self._ledger_type,
+        }
+
+
+class OctopusIntelligentStateSensor(CoordinatorEntity, SensorEntity):
+    """Sensor for intelligent device state."""
+
+    def __init__(self, coordinator: OctopusIntelligentDataUpdateCoordinator) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.account_number}_intelligent_state"
+        self._attr_name = "Octopus Intelligent State"
+        self._attr_device_class = "sensor"
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the state of the sensor."""
+        return self.coordinator.data.get("device", {}).get("status")
+
+    @property
+    def extra_state_attributes(self) -> dict[str, str]:
+        """Return extra state attributes."""
+        device = self.coordinator.data.get("device", {})
+        return {
+            "vehicle_make": device.get("vehicleMake"),
+            "vehicle_model": device.get("vehicleModel"),
+            "charge_point_make": device.get("chargePointMake"),
+            "charge_point_model": device.get("chargePointModel"),
         }

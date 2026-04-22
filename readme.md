@@ -37,12 +37,17 @@ Appareils séparés pour une organisation claire :
 - **Compteur Linky** (électricité) : consommation, coûts, index, contrat
 - **Compteur Gazpar** (gaz) : consommation, contrat
 
-### ⚙️ Fonctionnalités avancées
-- **Intervalle de mise à jour configurable** (5 à 1440 minutes, défaut : 60 min)
-- **Service de mise à jour forcée** pour rafraîchir immédiatement
-- **Compatible avec le tableau de bord Énergie** de Home Assistant
-- **Gestion automatique de l'authentification** avec rafraîchissement des tokens
-- **Exclusion automatique** des compteurs résiliés
+### ⚡ Recharge Intelligente (Octopus Intelligent)
+- **Interrupteur Recharge Rapide** : Déclenche / annule la recharge immédiate hors planning
+- **Interrupteur Recharge Intelligente** : Active / désactive la recharge planifiée aux heures creuses
+- **Capteur État du Dispositif** : Statut du véhicule électrique (SMART_CONTROL_CAPABLE, BOOSTING, etc.)
+- **Raisons de refus** : Affichage des motifs de refus (véhicule déconnecté, absent du domicile)
+- **Mise à jour fréquente** : Rafraîchissement toutes les 5 minutes quand en BOOSTING, 30 minutes sinon
+
+### 📈 Historique de Consommation Détaillé
+- **Données demi-horaires** : Import automatique des consommations fines dans le tableau de bord Énergie
+- **Granularité journalière** : Historique quotidien avec coûts associés
+- **Compatible avec l'app Octopus** : Même niveau de détail que l'application mobile
 
 ---
 

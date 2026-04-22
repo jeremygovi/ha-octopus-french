@@ -1,0 +1,9 @@
+{
+  "data": {
+    "cancelBoostCharge": {
+      "krakenflexDevice": {
+        "krakenflexDeviceId": "abc-123"
+      }
+    }
+  }
+}
