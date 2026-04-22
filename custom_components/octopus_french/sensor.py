@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import json
 import logging
 from typing import Any
 
@@ -27,6 +28,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN, LEDGER_TYPE_ELECTRICITY, LEDGER_TYPE_GAS
 from .coordinator import OctopusFrenchDataUpdateCoordinator
+from .coordinator_intelligent import OctopusIntelligentDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -324,6 +326,66 @@ async def async_setup_entry(
         for gas_meter in supply_points.get("gas", [])
         for sensor_config in GAS_SENSORS
     )
+
+    # Add intelligent vehicle status sensors
+    intelligent_coordinator: OctopusIntelligentDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id].get(
+        "intelligent_coordinator"
+    )
+    if intelligent_coordinator and intelligent_coordinator.data:
+        devices = intelligent_coordinator.data.get("devices", [])
+        for device in devices:
+            device_id = device.get("id")
+            if not device_id:
+                continue
+            device_name = device.get("name", "Véhicule")
+
+            # Vehicle status sensor
+            entities.append(
+                OctopusIntelligentVehicleStatusSensor(
+                    intelligent_coordinator,
+                    device_id,
+                    device_name,
+                )
+            )
+
+            # Charging preferences sensors
+            entities.append(
+                OctopusIntelligentWeekdayTargetSocSensor(
+                    intelligent_coordinator,
+                    device_id,
+                    device_name,
+                )
+            )
+            entities.append(
+                OctopusIntelligentWeekdayTargetTimeSensor(
+                    intelligent_coordinator,
+                    device_id,
+                    device_name,
+                )
+            )
+            entities.append(
+                OctopusIntelligentWeekendTargetSocSensor(
+                    intelligent_coordinator,
+                    device_id,
+                    device_name,
+                )
+            )
+            entities.append(
+                OctopusIntelligentWeekendTargetTimeSensor(
+                    intelligent_coordinator,
+                    device_id,
+                    device_name,
+                )
+            )
+
+            # Planned dispatches sensor
+            entities.append(
+                OctopusIntelligentPlannedDispatchesSensor(
+                    intelligent_coordinator,
+                    device_id,
+                    device_name,
+                )
+            )
 
     async_add_entities(entities)
 
@@ -1667,3 +1729,262 @@ class OctopusLedgerSensor(CoordinatorEntity, SensorEntity):
             "balance_cents": ledger.get("balance"),
             "ledger_type": self._ledger_type,
         }
+
+
+class OctopusIntelligentVehicleStatusSensor(CoordinatorEntity, SensorEntity):
+    """Sensor for vehicle charging status."""
+
+    def __init__(
+        self,
+        coordinator: OctopusIntelligentDataUpdateCoordinator,
+        device_id: str,
+        device_name: str,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._device_id = device_id
+        self._attr_unique_id = f"{device_id}_vehicle_status"
+        self._attr_translation_key = "vehicle_status"
+        self._attr_has_entity_name = True
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, device_id)},
+            via_device=(DOMAIN, coordinator.account_number),
+            name=device_name,
+            model=device_name,
+        )
+
+    def _device_data(self) -> dict[str, Any]:
+        return self.coordinator.get_device(self._device_id) or {}
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the vehicle status."""
+        status = self._device_data().get("status", {})
+        return status.get("currentState") or status.get("current")
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional status attributes."""
+        device = self._device_data()
+        status = device.get("status", {})
+        return {
+            "device_id": self._device_id,
+            "name": device.get("name"),
+            "current": status.get("current"),
+        }
+
+
+class OctopusIntelligentWeekdayTargetSocSensor(CoordinatorEntity, SensorEntity):
+    """Sensor for weekday target state of charge."""
+
+    def __init__(
+        self,
+        coordinator: OctopusIntelligentDataUpdateCoordinator,
+        device_id: str,
+        device_name: str,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._device_id = device_id
+        self._attr_unique_id = f"{device_id}_weekday_target_soc"
+        self._attr_translation_key = "weekday_target_soc"
+        self._attr_has_entity_name = True
+        self._attr_icon = "mdi:battery-charging-high"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_native_unit_of_measurement = "%"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, device_id)},
+            via_device=(DOMAIN, coordinator.account_number),
+            name=device_name,
+            model=device_name,
+        )
+
+    @property
+    def native_value(self) -> int | None:
+        """Return the weekday target SOC."""
+        preferences = self.coordinator.data.get("preferences", {})
+        return preferences.get("weekdayTargetSoc")
+
+
+class OctopusIntelligentWeekdayTargetTimeSensor(CoordinatorEntity, SensorEntity):
+    """Sensor for weekday target charging time."""
+
+    def __init__(
+        self,
+        coordinator: OctopusIntelligentDataUpdateCoordinator,
+        device_id: str,
+        device_name: str,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._device_id = device_id
+        self._attr_unique_id = f"{device_id}_weekday_target_time"
+        self._attr_translation_key = "weekday_target_time"
+        self._attr_has_entity_name = True
+        self._attr_icon = "mdi:clock-outline"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, device_id)},
+            via_device=(DOMAIN, coordinator.account_number),
+            name=device_name,
+            model=device_name,
+        )
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the weekday target time."""
+        preferences = self.coordinator.data.get("preferences", {})
+        return preferences.get("weekdayTargetTime")
+
+
+class OctopusIntelligentWeekendTargetSocSensor(CoordinatorEntity, SensorEntity):
+    """Sensor for weekend target state of charge."""
+
+    def __init__(
+        self,
+        coordinator: OctopusIntelligentDataUpdateCoordinator,
+        device_id: str,
+        device_name: str,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._device_id = device_id
+        self._attr_unique_id = f"{device_id}_weekend_target_soc"
+        self._attr_translation_key = "weekend_target_soc"
+        self._attr_has_entity_name = True
+        self._attr_icon = "mdi:battery-charging-high"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_native_unit_of_measurement = "%"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, device_id)},
+            via_device=(DOMAIN, coordinator.account_number),
+            name=device_name,
+            model=device_name,
+        )
+
+    @property
+    def native_value(self) -> int | None:
+        """Return the weekend target SOC."""
+        preferences = self.coordinator.data.get("preferences", {})
+        return preferences.get("weekendTargetSoc")
+
+
+class OctopusIntelligentWeekendTargetTimeSensor(CoordinatorEntity, SensorEntity):
+    """Sensor for weekend target charging time."""
+
+    def __init__(
+        self,
+        coordinator: OctopusIntelligentDataUpdateCoordinator,
+        device_id: str,
+        device_name: str,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._device_id = device_id
+        self._attr_unique_id = f"{device_id}_weekend_target_time"
+        self._attr_translation_key = "weekend_target_time"
+        self._attr_has_entity_name = True
+        self._attr_icon = "mdi:clock-outline"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, device_id)},
+            via_device=(DOMAIN, coordinator.account_number),
+            name=device_name,
+            model=device_name,
+        )
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the weekend target time."""
+        preferences = self.coordinator.data.get("preferences", {})
+        return preferences.get("weekendTargetTime")
+
+
+class OctopusIntelligentPlannedDispatchesSensor(CoordinatorEntity, SensorEntity):
+    """Sensor for planned charging dispatches."""
+
+    def __init__(
+        self,
+        coordinator: OctopusIntelligentDataUpdateCoordinator,
+        device_id: str,
+        device_name: str,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._device_id = device_id
+        self._attr_unique_id = f"{device_id}_planned_dispatches"
+        self._attr_translation_key = "planned_dispatches"
+        self._attr_has_entity_name = True
+        self._attr_icon = "mdi:calendar-clock"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, device_id)},
+            via_device=(DOMAIN, coordinator.account_number),
+            name=device_name,
+            model=device_name,
+        )
+
+    def _format_dispatch(self, timestamp: str | None) -> str | None:
+        if not timestamp:
+            return None
+        dt = dt_util.parse_datetime(timestamp)
+        if not dt:
+            return timestamp
+        return dt_util.as_local(dt).strftime("%d/%m %H:%M")
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the number of planned dispatches."""
+        dispatches = self.coordinator.data.get("dispatches", {}).get(self._device_id, [])
+        if not dispatches:
+            return "Aucune"
+        return f"{len(dispatches)} programmée{'s' if len(dispatches) > 1 else ''}"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return detailed dispatch information."""
+        dispatches = self.coordinator.data.get("dispatches", {}).get(self._device_id, [])
+
+        # Create formatted list for attributes
+        formatted_dispatches = []
+        for i, dispatch in enumerate(dispatches, 1):
+            start = self._format_dispatch(dispatch.get("start"))
+            end = self._format_dispatch(dispatch.get("end"))
+            if start and end:
+                formatted_dispatches.append(f"🕐 {start} → {end}")
+
+        # Create JSON-serializable dispatch list
+        dispatches_json_list = [
+            {
+                "start": dispatch.get("start"),
+                "end": dispatch.get("end"),
+                "start_local": self._format_dispatch(dispatch.get("start")),
+                "end_local": self._format_dispatch(dispatch.get("end")),
+                "duration_minutes": self._calculate_duration(dispatch),
+            }
+            for dispatch in dispatches
+        ]
+
+        return {
+            "count": len(dispatches),
+            "has_dispatches": len(dispatches) > 0,
+            "next_dispatch": dispatches[0] if dispatches else None,
+            "all_dispatches": dispatches,
+            "formatted_list": formatted_dispatches,
+            "summary": "\n".join(formatted_dispatches) if formatted_dispatches else "Aucune fenêtre programmée",
+            "dispatches_json": json.dumps(dispatches_json_list, ensure_ascii=False, indent=2),
+        }
+
+    def _calculate_duration(self, dispatch: dict) -> int | None:
+        """Calculate duration in minutes between start and end."""
+        try:
+            start_str = dispatch.get("start")
+            end_str = dispatch.get("end")
+            if not start_str or not end_str:
+                return None
+
+            start_dt = dt_util.parse_datetime(start_str)
+            end_dt = dt_util.parse_datetime(end_str)
+            if not start_dt or not end_dt:
+                return None
+
+            return int((end_dt - start_dt).total_seconds() / 60)
+        except (ValueError, AttributeError, TypeError):
+            return None
